@@ -5,9 +5,9 @@ type CreateProfileResponse struct {
 }
 
 type CreateProfileRequest struct {
-	Username        string `json:"username"`
-	Email           string `json:"email"`
-	Phone           string `json:"phone"`
-	Language        string `json:"language"`
-	HasGamification string `json:"has_gamification"`
+	Username        string `json:"username" validate:"required"`
+	Email           string `json:"email" validate:"required"`
+	Phone           string `json:"phone" validate:"required"`
+	Language        string `json:"language" validate:"required"`
+	HasGamification bool   `json:"has_gamification" default:"true" validate:"required"`
 }

@@ -3,8 +3,10 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
 	"identity/internal/domain/entity"
-	"identity/internal/domain/repos"
+	entityErrors "identity/internal/domain/errors"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -20,16 +22,38 @@ func NewProfileCommandRepository(pool *pgxpool.Pool) *ProfileCommandRepository {
 }
 
 func (r *ProfileCommandRepository) Create(ctx context.Context, p entity.Profile) (uuid.UUID, error) {
-	_, err := r.pool.Exec(ctx, `
+	var emailExists, phoneExists bool
+
+	err := r.pool.QueryRow(ctx, `
+        SELECT 
+            EXISTS(SELECT 1 FROM profiles WHERE email = $1),
+            EXISTS(SELECT 1 FROM profiles WHERE phone = $2)
+    `, p.Email, p.Phone).Scan(&emailExists, &phoneExists)
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	conflicts := make([]string, 0, 1)
+	if emailExists {
+		conflicts = append(conflicts, "email")
+	}
+	if phoneExists {
+		conflicts = append(conflicts, "phone")
+	}
+	if len(conflicts) > 0 {
+		return uuid.Nil, fmt.Errorf("%w: "+strings.Join(conflicts, ", "), entityErrors.ErrProfileConflict)
+	}
+
+	_, errEx := r.pool.Exec(ctx, `
         insert into profiles (user_id, username, email, phone, language, has_Gamification, created_at, updated_at)
         values ($1, $2, $3, $4, $5, $6, now(), null)
     `, p.UserId, p.Username, p.Email, p.Phone, p.Language, p.HasGamification)
-	if err != nil {
+	if errEx != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return uuid.Nil, repos.ErrConflict
+			return uuid.Nil, errEx
 		}
-		return uuid.Nil, err
+		return uuid.Nil, errEx
 	}
 	return p.UserId, nil
 }
@@ -43,12 +67,12 @@ func (r *ProfileCommandRepository) Update(ctx context.Context, p entity.Profile)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return uuid.Nil, repos.ErrConflict
+			return uuid.Nil, entityErrors.ErrProfileConflict
 		}
 		return uuid.Nil, err
 	}
 	if ct.RowsAffected() == 0 {
-		return uuid.Nil, repos.ErrNotFound
+		return uuid.Nil, entityErrors.ErrProfileNotFound
 	}
 	return p.UserId, nil
 }

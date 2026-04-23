@@ -2,14 +2,13 @@ package handlers
 
 import (
 	"encoding/json"
-	"net/http"
-	"strconv"
-
+	binder "identity/internal/adapter/http/binding"
 	"identity/internal/adapter/http/dto"
 	httperr "identity/internal/adapter/http/errors"
 	"identity/internal/application/command"
 	"identity/internal/application/model"
 	"identity/internal/application/query"
+	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -47,17 +46,16 @@ func NewUpdateProfileHandler(cmd *command.UpdateProfileCommand, get *query.GetPr
 // @Produce json
 // @Param body body dto.CreateProfileRequest true "create profile"
 // @Success 201 {object} dto.CreateProfileResponse
-// @Failure 400 {object} errors.ErrorBasicResponse
+// @Failure 400 {object} dto.ErrorResponse "INVALID_ARGUMENT: invalid json body"
+// @Failure 409 {object} dto.ErrorResponse "CONFLICT"
+// @Failure 422 {object} dto.ErrorValidationResponse
+// @Failure 500 {object} dto.ErrorResponse "INTERNAL"
 // @Router /profiles [post]
 func (h *CreateProfileHandler) CreateProfile(w http.ResponseWriter, r *http.Request) {
 	var req dto.CreateProfileRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httperr.Write(w, r, httperr.NewBasicMapped(http.StatusBadRequest, "INVALID_ARGUMENT", "invalid json body"))
-		return
-	}
-	hasGamificationBool, err := strconv.ParseBool(req.HasGamification)
+	err := binder.DecodeAndValidate(r, &req)
 	if err != nil {
-		httperr.Write(w, r, httperr.NewBasicMapped(http.StatusBadRequest, "INVALID_ARGUMENT", "invalid json body (hasGamification)"))
+		httperr.WriteError(w, r, httperr.Map(err))
 		return
 	}
 
@@ -66,12 +64,12 @@ func (h *CreateProfileHandler) CreateProfile(w http.ResponseWriter, r *http.Requ
 		Email:           req.Email,
 		Phone:           req.Phone,
 		Language:        req.Language,
-		HasGamification: hasGamificationBool,
+		HasGamification: req.HasGamification,
 	}
 
 	userId, err := h.command.Execute(r.Context(), profileModel)
 	if err != nil {
-		httperr.Write(w, r, httperr.Map(err))
+		httperr.WriteError(w, r, httperr.Map(err))
 		return
 	}
 
@@ -88,23 +86,29 @@ func (h *CreateProfileHandler) CreateProfile(w http.ResponseWriter, r *http.Requ
 // @Produce json
 // @Param user_id path string true "user id (uuid)"
 // @Success 200 {object} dto.ProfileResponse
-// @Failure 400 {object} errors.ErrorBasicResponse
+// @Failure 400 {object} dto.ErrorResponse "INVALID_ARGUMENT: invalid user_id"
+// @Failure 404 {object} dto.ErrorResponse "NOT_FOUND"
+// @Failure 409 {object} dto.ErrorResponse "CONFLICT"
+// @Failure 422 {object} dto.ErrorValidationResponse
+// @Failure 500 {object} dto.ErrorResponse "INTERNAL"
 // @Router /profiles/{user_id} [get]
 func (h *GetProfileHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	rawID := chi.URLParam(r, "user_id")
 	userID, err := uuid.Parse(rawID)
 	if err != nil {
-		httperr.Write(w, r, httperr.NewBasicMapped(http.StatusBadRequest, "INVALID_ARGUMENT", "invalid user_id"))
+		mapped := httperr.NewBasicMapped(http.StatusBadRequest, "INVALID_ARGUMENT", "invalid user_id")
+		httperr.WriteError(w, r, mapped)
 		return
 	}
 
 	p, err := h.query.Execute(r.Context(), userID)
 	if err != nil {
-		httperr.Write(w, r, httperr.Map(err))
+		httperr.WriteError(w, r, httperr.Map(err))
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(dto.ProfileResponse{
 		UserID:   p.UserID.String(),
 		Username: p.Username,
@@ -121,8 +125,12 @@ func (h *GetProfileHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Param body body dto.UpdateProfileRequest true "update profile"
 // @Param user_id path string true "user id (uuid)"
-// @Success 200 {object} dto.UpdateProfileResponse
-// @Failure 400 {object} errors.ErrorValidationResponse
+// @Success 204 {object} dto.UpdateProfileResponse
+// @Failure 400 {object} dto.ErrorValidationResponse
+// @Failure 404 {object} dto.ErrorResponse "NOT_FOUND"
+// @Failure 409 {object} dto.ErrorResponse "CONFLICT"
+// @Failure 422 {object} dto.ErrorResponse "INVALID_ARGUMENT (from domain/app via Map)"
+// @Failure 500 {object} dto.ErrorResponse "INTERNAL"
 // @Router /profiles/{user_id} [patch]
 func (h *UpdateProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	rawID := chi.URLParam(r, "user_id")
@@ -140,23 +148,25 @@ func (h *UpdateProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Requ
 
 	}
 	if len(mappedErrors) > 0 {
-		httperr.Write(w, r, httperr.NewValidatingMapped(http.StatusBadRequest, "INVALID_ARGUMENT", mappedErrors))
+		mapped := httperr.NewValidatingMapped(http.StatusBadRequest, "INVALID_ARGUMENT", mappedErrors)
+		httperr.WriteError(w, r, mapped)
 		return
 	}
 
 	current, err := h.get.Execute(r.Context(), userID)
 	if err != nil {
-		httperr.Write(w, r, httperr.Map(err))
+		httperr.WriteError(w, r, httperr.Map(err))
 		return
 	}
 
 	userId, err := h.cmd.Execute(r.Context(), current)
 	if err != nil {
-		httperr.Write(w, r, httperr.Map(err))
+		httperr.WriteError(w, r, httperr.Map(err))
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNoContent)
 	_ = json.NewEncoder(w).Encode(dto.UpdateProfileResponse{
 		UserID: userId.String(),
 	})

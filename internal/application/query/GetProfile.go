@@ -2,6 +2,7 @@ package query
 
 import (
 	"context"
+	"fmt"
 	"identity/internal/application/model"
 	"identity/internal/domain/repos"
 
@@ -19,7 +20,7 @@ func NewGetProfileQuery(repo repos.ProfileQueryRepository) *GetProfileQuery {
 func (q *GetProfileQuery) Execute(ctx context.Context, userID uuid.UUID) (model.ProfileModel, error) {
 	profile, err := q.repo.GetByUserID(ctx, userID)
 	if err != nil {
-		return model.ProfileModel{}, err
+		return model.ProfileModel{}, fmt.Errorf("GetProfile: %w", err)
 	}
 
 	result := model.NewProfileModelFromEntity(profile)

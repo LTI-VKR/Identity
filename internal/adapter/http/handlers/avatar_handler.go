@@ -32,13 +32,14 @@ func (h *GetAvatarUploadUrlHandler) GetAvatarUploadUrl(w http.ResponseWriter, r 
 	userIdString := chi.URLParam(r, "user_id")
 	userId, err := uuid.Parse(userIdString)
 	if err != nil {
-		httperr.Write(w, r, httperr.NewBasicMapped(http.StatusBadRequest, "INVALID_ARGUMENT", "invalid user_id"))
+		mapped := httperr.NewBasicMapped(http.StatusBadRequest, "INVALID_ARGUMENT", "invalid user_id")
+		httperr.WriteError(w, r, mapped)
 		return
 	}
 
 	url, err := h.command.Execute(context.Background(), userId)
 	if err != nil {
-		httperr.Write(w, r, httperr.Map(err))
+		httperr.WriteError(w, r, httperr.Map(err))
 		return
 	}
 
@@ -67,13 +68,14 @@ func (h *GetAvatarDownloadUrlHandler) GetAvatarDownloadUrl(w http.ResponseWriter
 	userIdString := chi.URLParam(r, "user_id")
 	userId, err := uuid.Parse(userIdString)
 	if err != nil {
-		httperr.Write(w, r, httperr.NewBasicMapped(http.StatusBadRequest, "INVALID_ARGUMENT", "invalid user_id"))
+		mapped := httperr.NewBasicMapped(http.StatusBadRequest, "INVALID_ARGUMENT", "invalid user_id")
+		httperr.WriteError(w, r, mapped)
 		return
 	}
 
 	url, err := h.query.Execute(context.Background(), userId)
 	if err != nil {
-		httperr.Write(w, r, httperr.Map(err))
+		httperr.WriteError(w, r, httperr.Map(err))
 		return
 	}
 

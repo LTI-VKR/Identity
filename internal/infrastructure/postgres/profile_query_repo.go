@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"identity/internal/domain/entity"
-	"identity/internal/domain/repos"
+	entityErrors "identity/internal/domain/errors"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -29,7 +29,7 @@ func (r *ProfileQueryRepository) GetByUserID(ctx context.Context, userID uuid.UU
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return entity.Profile{}, repos.ErrNotFound
+			return entity.Profile{}, entityErrors.ErrProfileNotFound
 		}
 		return entity.Profile{}, err
 	}
